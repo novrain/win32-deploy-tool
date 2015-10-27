@@ -1,0 +1,10 @@
+style-loader
+css-loader
+jsx-loader
+react
+react-router
+react-dropzone
+superagent
+sweetalert
+q
+ws

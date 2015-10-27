@@ -1,0 +1,36 @@
+body {
+    background: #3C3F41;
+    color: #BBBBBB;
+    font: 700 13px "Hiragino Sans GB", "Microsoft Yahei"
+}
+
+.ghost-btn, .ghost-btn:focus {
+    border: 0 solid #ffc66d;
+    color: #ffc66d;
+    background: transparent;
+}
+
+.ghost-btn:hover {
+    color: black;
+    background: #ffc66d;
+}
+
+.text-yellow {
+    color: #ffc66d;
+}
+
+.text-error {
+    color: #ff0000;
+}
+
+.text-success{
+    color: #43b19a
+}
+
+.btn-success{
+    background-color: #43b19a
+}
+
+body .stop-srolling{
+    overflow: scroll;
+}
