@@ -5,5 +5,5 @@ A project for manange Win32 environment project, including: install update monit
 
 
 Author:
-tyr 
+tyr tyr_liu@sina.com
 novrain  novrainn@gmail.com
