@@ -1,0 +1,1 @@
+# win32-deploy-tool; A example project show how to use this tool.
