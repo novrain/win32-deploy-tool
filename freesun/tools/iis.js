@@ -212,19 +212,21 @@ var IIS = function () {
             var self = this;
             self.execute(this.appcmd + ' list ' + type + ' /xml', function (err, outxml) {
                 parser.parseString(outxml, function (err, result) {
-                    result = result['appcmd'];
                     //
                     //  may return a single object if only 1 site exists
                     //
                     var mapped = [];
-                    if (_.isArray(result[type.toUpperCase()])) {
-                        mapped = _.map(result[type.toUpperCase()], function (v) {
-                            return v[self.sitekey];
-                        });
-                    } else if (result[type.toUpperCase()]) {
-                        mapped = [result[type.toUpperCase()][self.sitekey]];
-                    } else {
-                        mapped = [];
+                    if(result != null){
+                        result = result['appcmd'];
+                        if (_.isArray(result[type.toUpperCase()])) {
+                            mapped = _.map(result[type.toUpperCase()], function (v) {
+                                return v[self.sitekey];
+                            });
+                        } else if (result[type.toUpperCase()]) {
+                            mapped = [result[type.toUpperCase()][self.sitekey]];
+                        } else {
+                            mapped = [];
+                        }
                     }
 
                     if (cb) {
