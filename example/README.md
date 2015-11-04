@@ -1,1 +1,3 @@
-# win32-deploy-tool; A example project show how to use this tool.
+# win32-deploy-tool; 
+
+An example project to show how to use this tool.
