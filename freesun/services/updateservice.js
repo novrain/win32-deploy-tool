@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Created by rain on 2015/8/25.
  */
 /*jslint node:true */
@@ -173,21 +173,21 @@ Us.prototype.install = function (pkg) {
             .then(function () {
                 return that.loadInstallScript(projWrokspace);
             }).then(function (flow) {
-                return that.flow.install(flow)
-                    .then(function (flow) {
-                        return that.newProject(flow);
-                    })
-                    .then(function (flow) {
-                        that.finish();
-                    })
-                    .catch(function (flow) {
-                        that.failed();
-                        return that.flow.uninstall(flow);
-                    });
-            }).catch(function (err) {
-                that.failed();
-                //logger.error(err);
-            });
+            return that.flow.install(flow)
+                .then(function (flow) {
+                    return that.newProject(flow);
+                })
+                .then(function (flow) {
+                    that.finish();
+                })
+                .catch(function (flow) {
+                    that.failed();
+                    return that.flow.uninstall(flow);
+                });
+        }).catch(function (err) {
+            that.failed();
+            //logger.error(err);
+        });
     } catch (e) {
         that.failed();
         throw new Error(ustring.sprintf('This project does not exist or can not be updated. e: %s', e.stack));
@@ -259,25 +259,31 @@ Us.prototype.update = function (pjid, pkg) {
                 oldProj = merge(oldProj, projWorkspace);
                 return that.loadUpdateScript(oldProj, projWorkspace);
             }).then(function (flow) {
-                return that.flow.newFlow.update(flow)
-                    .then(function () {
-                        return that.updateProject(flow.newFlow);
-                    })
-                    .then(function () {
-                        that.finish();
-                        //return Q();
-                    })
-                    .catch(function () {
-                        that.failed();
-                        return that.flow.newFlow.rollback(that.flow);
-                    });
-                //.then(function () {
-                //});
-            }).catch(function (err) {
-                that.failed();
-                return Q();
-                //logger.error(err);
-            });
+            that.flow.oldFlow.project.workspace.keepOldBackup = that.flow.newFlow.project.workspace.keepOldBackup;
+            return that.flow.newFlow.update(flow)
+                .then(function () {
+                    return that.updateProject(flow.newFlow);
+                })
+                .then(function () {
+                    that.finish();
+                    if(!flow.newFlow.project.workspace.keepOldBackup) {
+                        var p = path.join(flow.oldFlow.project.workspace.backup, 'temp', flow.oldFlow.project.name);
+                        fs.emptyDirSync(p);
+                        fs.rmdirSync(p);
+                    }
+                    //return Q();
+                })
+                .catch(function () {
+                    that.failed();
+                    return that.flow.newFlow.rollback(that.flow);
+                });
+            //.then(function () {
+            //});
+        }).catch(function (err) {
+            that.failed();
+            return Q();
+            //logger.error(err);
+        });
     } catch (e) {
         that.failed();
         throw new Error(ustring.sprintf('This project does not exist or can not be updated. e: %s', e.stack));
@@ -349,19 +355,8 @@ Us.prototype.begin = function (projWorkspace) {
     this.updateStep(flowStep, new StepLog('Begin...', 1, 'info'));
     this.updateStep(flowStep, new StepLog(ustring.sprintf('Package:  %s', pkgPath), 1, 'info'));
     Project.pauseWatching();
-    (function () {
-        if (projWorkspace.workspace.keepOldBackup) {
-            var now = new Date();
-            projWorkspace.workspace.backup = path.join(projWorkspace.workspace.backupRoot,
-                ustring.sprintf('%s-%s-%s %s-%s-%s', now.getFullYear(), now.getMonth() + 1,
-                    now.getDate(), now.getHours(), now.getMinutes(), now.getSeconds()));
-        } else {
-            projWorkspace.workspace.backup = projWorkspace.workspace.backupRoot;
-        }
-        return Q.nfcall(fs.emptyDir, projWorkspace.workspace.backup);
-    }()).then(function () {
-            return Q.nfcall(fs.emptyDir, decompressPath);
-        })
+    projWorkspace.workspace.backup = projWorkspace.workspace.backupRoot;
+    Q.nfcall(fs.emptyDir, decompressPath)
         .then(function () {
             var reader = fs.createReadStream(pkgPath);
             reader.pipe(unzip.Extract({path: decompressPath}));
@@ -407,7 +402,7 @@ Us.prototype.selfUpdate = function (pkg) {
         setTimeout(function () {
             exec("npm install", {cwd: Us.ROOT}, function (errIn, stdOut, stdErr) {
                 var err = errIn || stdErr.trim();
-                if (err) {
+                if (/npm ERR!/g.test(err)) {
                     that.updateStep(flowStep, new StepLog(ustring.sprintf('Failed: %s', err), 1, 'error'));
                 } else {
                     that.updateStep(flowStep, new StepLog(ustring.sprintf('Success: %s', stdOut), 1, 'info'));

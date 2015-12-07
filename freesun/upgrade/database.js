@@ -97,18 +97,79 @@ var restore = function (flow, check) {
 };
 Database.restore = restore;
 
+function fillZero(str) {
+    var strs = str.split('.');
+    var rs = [];
+    strs.forEach(function (s) {
+        s = '0000' + s;
+        rs.push(s.substring(s.length - 4, s.length));
+    });
+
+    return rs.join('.');
+}
+
+function getCompareStr(v) {
+    var vs = v.split('-');
+    var from = fillZero(vs[0]);
+    var to = fillZero(vs[1]);
+    return from + '-' + to;
+}
+
+function compareVersion(v1, v2) {
+    v1 = getCompareStr(v1);
+    v2 = getCompareStr(v2);
+
+    if (v1 < v2) return -1;
+    if (v1 == v2) return 0;
+    if (v1 > v2) return 1;
+}
+
+function getMinVersion(versions) {
+    var min = versions[0];
+    if (versions.length > 1) {
+        for (var i = 1; i < versions.length; i++) {
+            if (compareVersion(min, versions[i]) > 0) {
+                min = versions[i];
+            }
+        }
+    }
+
+    return min;
+}
+
 var executeSqls = function (flow) {
     var sqlCmd = flow.project.sqlCmd,
         deferred = Q.defer(),
+        SCHEMA = 'schema',
+        DATA = 'data',
         flowStep,
         stepLog,
         executeOptions = extend({}, sqlCmd.loginTemplate, sqlCmd.ioTemplate),
-        sqlFiles;
+        sqlSchemaFiles,
+        sqlDataFiles,
+        sqlFiles = [];
     flowStep = new FlowStep('Execute sql scripts.');
     flow.service.newStep(flowStep);
     flow.service.updateStep(flowStep, new StepLog('Begin...', 1, 'info'));
     try {
-        sqlFiles = fs.readdirSync(sqlCmd.inputFiles);
+        var versions = fs.readdirSync(sqlCmd.inputFiles);
+        while (versions.length > 0) {
+            var minVersion = getMinVersion(versions);
+            sqlSchemaFiles = fs.readdirSync(path.join(sqlCmd.inputFiles, minVersion, SCHEMA));
+            sqlDataFiles = fs.readdirSync(path.join(sqlCmd.inputFiles, minVersion, DATA));
+            sqlFiles = sqlFiles.concat(!sqlSchemaFiles ? [] : sqlSchemaFiles.filter(function (file) {
+                return path.extname(file) === '.sql';
+            }).map(function (file) {
+                return path.join(sqlCmd.inputFiles, minVersion, SCHEMA, file);
+            }));
+            sqlFiles = sqlFiles.concat(!sqlDataFiles ? [] : sqlDataFiles.filter(function (file) {
+                return path.extname(file) === '.sql';
+            }).map(function (file) {
+                return path.join(sqlCmd.inputFiles, minVersion, DATA, file);
+            }));
+
+            versions.splice(versions.indexOf(minVersion), 1);
+        }
     } catch (err) {
         stepLog = new StepLog('Error. reason:' + err, 1, 'warn');
         stepLog = new StepLog('End...', 1, 'info');
@@ -117,11 +178,9 @@ var executeSqls = function (flow) {
         deferred.resolve(flow);
         return deferred.promise;
     }
-    executeOptions.inputFiles = !sqlFiles ? [] : sqlFiles.filter(function (file) {
-        return path.extname(file) === '.sql';
-    }).map(function (file) {
-        return path.join(sqlCmd.inputFiles, file);
-    });
+    executeOptions.inputFiles = sqlFiles;
+    console.log(executeOptions.inputFiles);
+
     if (executeOptions.inputFiles && executeOptions.inputFiles.length > 0) {
         executeOptions.outputFile = sqlCmd.outputFile;
         sqlcmd(executeOptions, function (data) {
