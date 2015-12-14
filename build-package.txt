@@ -3,7 +3,7 @@ css-loader
 jsx-loader
 react
 react-router
-react-dropzone
+react-dropzone@1.2.4
 superagent
 sweetalert
 q
