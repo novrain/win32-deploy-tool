@@ -266,10 +266,29 @@ Us.prototype.update = function (pjid, pkg) {
                 })
                 .then(function () {
                     that.finish();
-                    if(!flow.newFlow.project.workspace.keepOldBackup) {
+                    if (!flow.newFlow.project.workspace.keepOldBackup) {
                         var p = path.join(flow.oldFlow.project.workspace.backup, 'temp', flow.oldFlow.project.name);
                         fs.emptyDirSync(p);
                         fs.rmdirSync(p);
+                    } else {
+                        var number = 0;
+                        var pb = path.join(flow.oldFlow.project.workspace.backup, flow.oldFlow.project.name);
+                        if (fs.existsSync(pb)) {
+                            var files = fs.readdirSync(pb);
+                            files.forEach(function (f) {
+                                if (Number(f) > number) {
+                                    number = Number(f);
+                                }
+                            });
+                            var nowPath = path.join(pb, 'now');
+                            if (fs.existsSync(nowPath)) {
+                                fs.renameSync(nowPath, path.join(pb, (number + 1).toString()));
+                            }
+                        }
+
+                        if (fs.existsSync(nowPath)) {
+                            fs.emptyDirSync(nowPath);
+                        }
                     }
                     //return Q();
                 })
