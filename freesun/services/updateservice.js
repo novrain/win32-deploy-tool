@@ -147,7 +147,6 @@ Us.prototype.finish = function () {
     setTimeout(function (){
         Project.resumeWatching();
     }, 2000);
-
     this.wss.broadcast('~!@#$over');
 };
 
@@ -155,8 +154,7 @@ Us.prototype.failed = function () {
     this.isRunning = false;
     setTimeout(function () {
         Project.resumeWatching();
-    }, 2000);
-    Project.resumeWatching();
+    }, 2000);    
     this.wss.broadcast('~!@#$error');
 };
 
