@@ -144,12 +144,18 @@ Us.prototype.status = function () {
 
 Us.prototype.finish = function () {
     this.isRunning = false;
-    Project.resumeWatching();
+    setTimeout(function (){
+        Project.resumeWatching();
+    }, 2000);
+
     this.wss.broadcast('~!@#$over');
 };
 
 Us.prototype.failed = function () {
     this.isRunning = false;
+    setTimeout(function () {
+        Project.resumeWatching();
+    }, 2000);
     Project.resumeWatching();
     this.wss.broadcast('~!@#$error');
 };
@@ -259,46 +265,51 @@ Us.prototype.update = function (pjid, pkg) {
                 oldProj = merge(oldProj, projWorkspace);
                 return that.loadUpdateScript(oldProj, projWorkspace);
             }).then(function (flow) {
-            that.flow.oldFlow.project.workspace.keepOldBackup = that.flow.newFlow.project.workspace.keepOldBackup;
-            return that.flow.newFlow.update(flow)
-                .then(function () {
-                    return that.updateProject(flow.newFlow);
-                })
-                .then(function () {
-                    that.finish();
-                    if (!flow.newFlow.project.workspace.keepOldBackup) {
-                        var p = path.join(flow.oldFlow.project.workspace.backup, 'temp', flow.oldFlow.project.name);
-                        fs.emptyDirSync(p);
-                        fs.rmdirSync(p);
-                    } else {
-                        var number = 0;
-                        var pb = path.join(flow.oldFlow.project.workspace.backup, flow.oldFlow.project.name);
-                        if (fs.existsSync(pb)) {
-                            var files = fs.readdirSync(pb);
-                            files.forEach(function (f) {
-                                if (Number(f) > number) {
-                                    number = Number(f);
+                that.flow.oldFlow.project.workspace.keepOldBackup = that.flow.newFlow.project.workspace.keepOldBackup;
+                return that.flow.newFlow.update(flow)
+                    .then(function () {
+                        return that.updateProject(flow.newFlow);
+                    })
+                    .then(function () {
+                        if (!flow.newFlow.project.workspace.keepOldBackup) {
+                            var p = path.join(flow.oldFlow.project.workspace.backup, 'temp', flow.oldFlow.project.name);
+                            fs.emptyDirSync(p);
+                            fs.rmdirSync(p);
+                        } else {
+                            var number = 0;
+                            var pb = path.join(flow.oldFlow.project.workspace.backup, flow.oldFlow.project.name);
+                            if (fs.existsSync(pb)) {
+                                var files = fs.readdirSync(pb);
+                                files.forEach(function (f) {
+                                    if (Number(f) > number) {
+                                        number = Number(f);
+                                    }
+                                });
+                                var nowPath = path.join(pb, 'now');
+                                if (fs.existsSync(nowPath)) {
+                                    fs.renameSync(nowPath, path.join(pb, (number + 1).toString()));
                                 }
-                            });
-                            var nowPath = path.join(pb, 'now');
+                            }
+
                             if (fs.existsSync(nowPath)) {
-                                fs.renameSync(nowPath, path.join(pb, (number + 1).toString()));
+                                fs.emptyDirSync(nowPath);
                             }
                         }
-
-                        if (fs.existsSync(nowPath)) {
-                            fs.emptyDirSync(nowPath);
+                        return Q.Promise.resolve(true);
+                    })
+                    .catch(function () {
+                        return that.flow.newFlow.rollback(that.flow).then(function () {
+                            return Q.Promise.resolve(false);
+                        });
+                    }).then(function (isOK) {
+                        if (isOK) {
+                            that.finish();
+                        } else {
+                            that.failed();
                         }
-                    }
-                    //return Q();
-                })
-                .catch(function () {
-                    that.failed();
-                    return that.flow.newFlow.rollback(that.flow);
-                });
-            //.then(function () {
-            //});
-        }).catch(function (err) {
+                    });
+            }
+        ).catch(function (err) {
             that.failed();
             return Q();
             //logger.error(err);
