@@ -20,7 +20,7 @@ function Database() {
 
 var backup = function (flow) {
     var sqlCmd = flow.project.sqlCmd,
-        backupOptions = extend({}, sqlCmd.loginTemplate, sqlCmd.queryTemplate),
+        backupOptions = extend({}, sqlCmd.loginTemplate, sqlCmd.queryTemplate, sqlCmd.errorTemplate),
         deferred = Q.defer(),
         targetFile = sqlCmd.backupDBFile,
         flowStep,
@@ -56,7 +56,7 @@ Database.backup = backup;
 
 var restore = function (flow, check) {
     var sqlCmd = flow.project.sqlCmd,
-        restoreOptions = extend({}, sqlCmd.loginTemplate, sqlCmd.queryTemplate),
+        restoreOptions = extend({}, sqlCmd.loginTemplate, sqlCmd.queryTemplate, sqlCmd.errorTemplate),
         deferred = Q.defer(),
         flowStep,
         stepLog,
@@ -144,7 +144,7 @@ var executeSqls = function (flow) {
         DATA = 'data',
         flowStep,
         stepLog,
-        executeOptions = extend({}, sqlCmd.loginTemplate, sqlCmd.ioTemplate),
+        executeOptions = extend({}, sqlCmd.loginTemplate, sqlCmd.ioTemplate, sqlCmd.errorTemplate),
         sqlSchemaFiles,
         sqlDataFiles,
         sqlFiles = [];
