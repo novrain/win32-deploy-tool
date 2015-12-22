@@ -15,25 +15,11 @@ var StepStatus = require('./flowStep').StepStatus;
 
 var CopyUtil = {};
 
-function getBackupDir(flow, createNew){
-    if(!flow.project.workspace.keepOldBackup){
+function getBackupDir(flow) {
+    if (!flow.project.workspace.keepOldBackup) {
         return path.join(flow.project.workspace.backup, 'temp', flow.project.name);
-    } else{
-        var number = 0;
-        var p = path.join(flow.project.workspace.backup, flow.project.name);
-        if(fs.existsSync(p)){
-            var files = fs.readdirSync(p);
-            files.forEach(function (f){
-                if(Number(f) > number){
-                    number = Number(f);
-                }
-            });
-        }
-        if(createNew){
-            number = number + 1;
-        }
-        p = path.join(p, number.toString());
-        return number === 0 ? null : p;
+    } else {
+        return path.join(flow.project.workspace.backup, flow.project.name, 'now');
     }
 }
 
@@ -45,13 +31,7 @@ var backup = function (flow, targetArray, desc) {
     flowStep = new FlowStep(ustring.sprintf('Backup %s.', desc));
     flow.service.newStep(flowStep);
     flow.service.updateStep(flowStep, new StepLog('Begin...', 1, 'info'));
-    targetDir = getBackupDir(flow, true);
-    if(!targetDir){
-        stepLog = new StepLog(ustring.sprintf('Fail, reason: backup dir not found or created error'), 2, 'error');
-        flowStep.status = StepStatus.Failed;
-        flow.service.updateStep(flowStep, stepLog);
-        deferred.reject(flow);
-    }
+    targetDir = getBackupDir(flow);
     if (Array.isArray(targetArray)) {
         targetArray.reduce(function (prev, next, i) {
             return prev.then(function () {
@@ -177,12 +157,7 @@ var migrate = function (flow, targetArray, targetDir, desc) {
     flow.service.newStep(step);
     flow.service.updateStep(step, new StepLog('Begin...', 1, 'info'));
 
-    var backup = getBackupDir(flow, false);
-    if(!backup){
-        step.status = StepStatus.Failed;
-        flow.service.updateStep(step, new StepLog('Fail. reason: backup dir not found', 2, 'error'));
-        deferred.reject(flow);
-    }
+    var backup = getBackupDir(flow);
 
     var internalCopy = function (p, c) {
         var source = path.join(backup, p.path, c.from);
@@ -246,14 +221,7 @@ var restore = function (flow, targetArray, desc) {
         deferred.resolve(flow);
         return;
     }
-
-    targetDir = getBackupDir(flow, false);
-    if(!targetDir){
-        flowStep.status = StepStatus.Failed;
-        flow.service.updateStep(flowStep, new StepLog('skipped. reason: backup dir not found', 2, 'error'));
-        deferred.resolve(flow);
-    }
-
+    targetDir = getBackupDir(flow);
 
     if (Array.isArray(targetArray)) {
         targetArray.reduce(function (prev, next, i) {
