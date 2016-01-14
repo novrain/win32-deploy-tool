@@ -20,7 +20,7 @@ function WebServer(web) {
     this.port = web.port;
     this.host = web.host;
     this.path = web.path;
-    this.watch = web.watch;
+    this.isWatching = web.watch !== undefined ? web.watch : true;
     this.absPath = web.absPath;
     this.absDir = web.absDir;
     this.pool = web.pool;
@@ -32,8 +32,13 @@ WebServer.prototype.refresh = function () {
         derfered = Q.defer();
     ((Q.nbind(iis.getInfo, iis))('site', self.name))
         .then(function (info) {
-            self.status = info === null ? null : info.state;
-            derfered.resolve();
+            var status = info === null ? 'Stopped' : info.state;
+            ((Q.nbind(iis.getInfo, iis))('apppool', self.pool)).then(function (pool) {
+                self.status = pool === null ? null : ((status === 'Started' && pool.state === 'Started') ? 'Started' : 'Stopped');
+                derfered.resolve();
+            }, function () {
+                derfered.resolve();
+            });
         }, function (err) {
             logger.error(err);
             self.status = null;
@@ -52,7 +57,7 @@ WebServer.prototype.toggle = function (cmd, refresh) {
         start,
         func;
     if (refresh) {
-        start = this.refresh;
+        start = self.refresh;
     } else {
         start = Q();
     }

@@ -4,10 +4,9 @@
 /*jslint node:true */
 "use strict";
 var fs = require('fs-extra');
-var exec = require('child_process').exec;
 var Q = require('q');
 var ustring = require('underscore.string');
-var path = require('path');
+var Project = require('../models/project');
 
 var Process = require('../models/process');
 var FlowStep = require('./flowStep').FlowStep;
@@ -38,6 +37,7 @@ ProcessUpdate.stop = function (flow) {
         stepLog = new StepLog(ustring.sprintf('Fail, reason: %s', err), 1, 'error');
         flowStep.status = StepStatus.Failed;
         flow.service.updateStep(flowStep, stepLog);
+        flow.error = err;
         deferred.reject(flow);
     });
     return deferred.promise;
@@ -53,9 +53,19 @@ ProcessUpdate.start = function (flow) {
     flow.service.updateStep(flowStep, new StepLog('Begin...', 1, 'info'));
     proj.process.reduce(function (prev, next) {
         return prev.then(function () {
-            stepLog = new StepLog(ustring.sprintf('Start process: %s', next.name), 2, 'info');
+            if (Project.lastState) {
+                if (!next.project.isWatching || !next.isWatching) {
+                    stepLog = new StepLog(ustring.sprintf('Project/process watching switch is off, skip: %s', next.name), 2, 'warn');
+                    flow.service.updateStep(flowStep, stepLog);
+                    return Q();
+                }
+                stepLog = new StepLog(ustring.sprintf('Start process: %s', next.name), 2, 'info');
+                flow.service.updateStep(flowStep, stepLog);
+                return next.toggle(1);
+            }
+            stepLog = new StepLog(ustring.sprintf('Global watching switch off, skip: %s', next.name), 2, 'warn');
             flow.service.updateStep(flowStep, stepLog);
-            return next.toggle(1);
+            return Q();
         });
     }, Process.getRuntimeInfo(proj.process)).then(function () {
         flow.service.updateStep(flowStep, new StepLog('End...', 1, 'info'));
@@ -65,6 +75,7 @@ ProcessUpdate.start = function (flow) {
         stepLog = new StepLog(ustring.sprintf('fail, reason: %s', err), 1, 'error');
         flowStep.status = StepStatus.Failed;
         flow.service.updateStep(flowStep, stepLog);
+        flow.error = err;
         deferred.reject(flow);
     });
     return deferred.promise;

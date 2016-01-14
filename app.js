@@ -3,6 +3,7 @@
 'use strict';
 // form npm
 var express = require('express');
+var fs = require('fs-extra');
 var path = require('path');
 var favicon = require('serve-favicon');
 var logger = require('morgan');
@@ -12,6 +13,23 @@ var passport = require('passport');
 var session = require('express-session');
 var i18n = require("i18n");
 var flash = require("connect-flash");
+// config
+var config = require('./freesun/env/config');
+
+/**init database // @Todo support database update really**/
+var dest = config.database.opts.storage;
+var source = path.join('./freesun/env/tmp', 'init.db');
+if (!fs.existsSync(dest)) {
+    if (fs.existsSync(source)) {
+        fs.copySync(source, dest);
+    } else {
+        throw new Error('Can not init database');
+    }
+}
+var db = require('./freesun/db/database');
+
+var app = express();
+app.use(db.entry(app, config));
 
 // from freesun
 // process service
@@ -22,8 +40,14 @@ var ss = require('./freesun/services/systemservice');
 var ts = require('./freesun/services/tailfileservice');
 // tail service
 var us = require('./freesun/services/updateservice');
-// config
-var config = require('./freesun/env/config');
+
+
+i18n.configure({
+    locales: ['zh_CN', 'en'],
+    directory: __dirname + '/locales'
+});
+
+
 // routes
 var home = require('./routes/index');
 var login = require('./routes/login');
@@ -32,13 +56,6 @@ var proc = require('./routes/process');
 var webr = require('./routes/webserver');
 var upld = require('./routes/upload');
 var upgrade = require('./routes/upgrade');
-
-var app = express();
-
-i18n.configure({
-    locales: ['zh_CN', 'en'],
-    directory: __dirname + '/locales'
-});
 
 // view engine setup
 app.set('views', path.join(__dirname, 'views'));
@@ -57,7 +74,6 @@ app.use(session({
     saveUninitialized: true
 }));
 app.use(i18n.init);
-
 
 if (config.auth.enable) {
     app.use(passport.initialize());

@@ -8,6 +8,7 @@ var ApiCaller = require('../utils/ApiCaller');
 var WebSocket = require('ws');
 require('sweetalert/dist/sweetalert.css');
 var swal = require('sweetalert');
+var version = require('../version.json');
 
 module.exports = React.createClass({
     mixins: [Navigation],
@@ -50,6 +51,48 @@ module.exports = React.createClass({
         this.setState({keyword: event.target[0].value.trim()});
         return false;
     },
+    handleStartAll: function () {
+        var self = this;
+        swal({
+            title: "是否启动全部进程?",
+            text: "",
+            type: "warning",
+            showCancelButton: true,
+            cancelButtonText: 'no',
+            confirmButtonColor: "#ffc66d",
+            confirmButtonText: "go!",
+            showLoaderOnConfirm: true,
+            closeOnConfirm: false
+        }, function () {
+            ApiCaller.post(ApiCaller.API.PROJECT_START_ALL)
+                .then(function (d) {
+                    var icon = d.result === true ? "success" : "error";
+                    var txt = d.result === true ? "启动成功" : "启动失败";
+                    swal(txt, '', icon);
+                });
+        });
+    },
+    handleStopAll: function () {
+        var self = this;
+        swal({
+            title: "是否停止全部进程?",
+            text: "",
+            type: "warning",
+            showCancelButton: true,
+            cancelButtonText: 'no',
+            confirmButtonColor: "#ffc66d",
+            confirmButtonText: "go!",
+            showLoaderOnConfirm: true,
+            closeOnConfirm: false
+        }, function () {
+            ApiCaller.post(ApiCaller.API.PROJECT_STOP_ALL)
+                .then(function (d) {
+                    var icon = d.result === true ? "success" : "error";
+                    var txt = d.result === true ? "停止成功" : "停止失败";
+                    swal(txt, '', icon);
+                });
+        });
+    },
     getProjectWatchState : function () {
         var self = this;
         ApiCaller.get(ApiCaller.API.PROJECT_WATCH_STATE)
@@ -68,6 +111,18 @@ module.exports = React.createClass({
             this.setState({data: null, msg: "连接已飞,F5试试.."});
         }.bind(this);
     },
+    renderStartStopAll: function() {
+        if(this.state.watching){
+            return '';
+        }
+
+        return (
+            <p style={{textAlign: 'center', marginTop: 20}}>
+                <button onClick={this.handleStartAll} className="btn ghost-btn">全部启动</button>/
+                <button onClick={this.handleStopAll} className="btn ghost-btn">全部停止</button>
+            </p>
+        );
+    },
     render: function () {
         var self = this;
         var content = '';
@@ -77,7 +132,8 @@ module.exports = React.createClass({
             content = (<h3 style={{textAlign: 'center'}}><span className="text-yellow">暂无项目,请安装新项目</span></h3>);
         } else{
             content = this.state.data.map(function(p){
-                return (<Project id={p.id} name={p.name} process={p.process} webserver={p.webserver} updateable={p.updatable} filter={self.state.keyword} />)
+                return (<Project id={p.id} name={p.name} process={p.process} webserver={p.webserver} version={p.version}
+                                 updateable={p.updatable} watching={self.state.watching} filter={self.state.keyword} />)
             });
         }
 
@@ -101,9 +157,11 @@ module.exports = React.createClass({
                     </form>
                     <p style={{textAlign: 'center', marginTop: 40}}><button className="btn ghost-btn" onClick={this.handleInstall}>安装新项目</button></p>
                     <p style={{textAlign: 'center', marginTop: 20}}>{watching}</p>
+                    {this.renderStartStopAll()}
                     <div style={{marginTop: 100}}>
                         <p><a href="/login" style={{color: '#ffc66d'}}>登录</a></p>
                         <p><a href="javascript:void(0);" style={{color: '#ffc66d'}} onClick={this.handleSysUpdate}>小护士-自我升级</a></p>
+                        <p>{`revision: ${version.revision} / date:${version.datetime}`}</p>
                     </div>
                 </div>
                 <div className="col-md-3">&nbsp;</div>

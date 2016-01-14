@@ -18,7 +18,7 @@ var dataStyle = {
 module.exports = React.createClass({
     mixins: [Navigation],
     handleStartStop: function () {
-        var text = this.props.info.r[0].status === 1 ? "停止" : "启动";
+        var text = this.props.info.stats.status === 1 ? "停止" : "启动";
         var self = this;
         swal({
             title: "是否" + text + this.props.info.name + "?",
@@ -32,10 +32,10 @@ module.exports = React.createClass({
             closeOnConfirm: false
         }, function () {
             ApiCaller.post(ApiCaller.API.PROCESS_TOGGLE, {
-                pjid: self.props.projectId,
-                id: self.props.info.id,
-                cmd: self.props.info.r[0].status === 1 ? 0 : 1
-            })
+                    pjid: self.props.projectId,
+                    id: self.props.info.id,
+                    cmd: self.props.info.stats.status === 1 ? 0 : 1
+                })
                 .then(function (d) {
                     var icon = d.res === true ? "success" : "error";
                     swal(d.msg, '', icon);
@@ -51,28 +51,34 @@ module.exports = React.createClass({
         var titleClass;
         var status;
         var details;
-        var time = TimeUtil.MillisecondToDate(this.props.info.r[0].uptime);
+        var time = TimeUtil.MillisecondToDate(this.props.info.stats.uptime);
+        var timeSum = TimeUtil.MillisecondToDate(this.props.info.stats.totalUpTime + this.props.info.stats.uptime);
 
-        if (this.props.info.r[0].status === 1) {
+        if (this.props.info.stats.status === 1) {
             btnToggle = <button className="btn ghost-btn" onClick={this.handleStartStop}>停止</button>;
             titleClass = 'text-success';
             status = (
-                <p>运行时长：<span style={dataStyle}>{time}</span></p>
+                <div>
+                    <p>当前版本运行时长：</p>
+                    <p style={dataStyle}>{time}</p>
+                </div>
             );
             details = (
                 <div>
-                    <div>CPU：<span style={dataStyle}>{this.props.info.r[0].cpupec}%</span></div>
-                    <div><PerfChart type="line" data={this.props.info.r[0].cpupec}/></div>
+                    <div>CPU：<span style={dataStyle}>{this.props.info.stats.cpupec}%</span></div>
+                    <div><PerfChart type="line" data={this.props.info.stats.cpupec}/></div>
                     <div>MEM：<span
-                        style={dataStyle}>{UnitUtil.Convert1024(this.props.info.r[0].memory)}({this.props.info.r[0].mempec}%)</span>
+                        style={dataStyle}>{UnitUtil.Convert1024(this.props.info.stats.memory)}({this.props.info.stats.mempec}%)</span>
                     </div>
-                    <div><PerfChart type="bar" data={this.props.info.r[0].mempec}/></div>
+                    <div><PerfChart type="bar" data={this.props.info.stats.mempec}/></div>
                 </div>);
         } else {
             btnToggle = <button className="btn ghost-btn" onClick={this.handleStartStop}>启动</button>;
             titleClass = 'text-danger';
             status = (
-                <h4 calssName="text-yellow">未启动</h4>
+                <div style={{minHeight: 186}}>
+                    <h4 calssName="text-yellow">未启动</h4>
+                </div>
             );
             details = '';
         }
@@ -84,7 +90,7 @@ module.exports = React.createClass({
         }
 
         var icon = '';
-        if(this.props.info.watch === true){
+        if (this.props.info.watch === true) {
             icon = <i className="glyphicon glyphicon-eye-open" title="已监控"></i>;
         } else {
             icon = <i className="glyphicon glyphicon-eye-close" title="未监控"></i>;
@@ -93,13 +99,16 @@ module.exports = React.createClass({
         return (
             <div>
                 <div className="col-md-4" style={{padding: 0}}>
-                    <div style={{ backgroundColor: '#313335', padding: '5px', margin: '5px'}}>
-                        <h3 className={titleClass}>{this.props.info.name}<small style={{paddingLeft: 20}}>{icon}</small></h3>
+                    <div style={{ backgroundColor: '#313335', minHeight:404, padding: '5px', margin: '5px'}}>
+                        <h3 className={titleClass}>{this.props.info.name}
+                            <small style={{paddingLeft: 20}}>{icon}</small>
+                        </h3>
 
                         <div className="row">
                             <div className="col-lg-12 col-md-12">
                                 <div style={{lineHeight: '32px'}}>{this.props.info.path}</div>
-
+                                <p>累计运行时长：</p>
+                                <p style={dataStyle}>{timeSum}</p>
                                 <div>{status}</div>
                             </div>
                             <div className="col-lg-12 col-md-12">

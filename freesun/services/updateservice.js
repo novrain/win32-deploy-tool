@@ -14,6 +14,9 @@ var events = require("events");
 var util = require("util");
 var uuid = require('node-uuid');
 var merge = require('lodash').merge;
+var moment = require('moment');
+
+var db = require('../db/database');
 
 var unzip = require('../tools/unzip/unzip');
 var logger = require('../env/logger');
@@ -49,10 +52,14 @@ Us.uploads = path.join(__dirname, '../../uploads');
 Us.deployScript = 'deploy.js';
 Us.tempDir = path.join(__dirname, '..\\temp');
 Us.deployFlowSrc = path.join(Us.decompress, Us.deployScript);
+Us.versionInfoFileSrc = path.join(Us.decompress, Project.versionInfoFile);
 Us.deployFlowTarget = path.join(Us.tempDir, Us.deployScript);
 Us.sqlDir = path.join(Us.decompress, 'sql');
 Us.sqlOutput = path.join(Us.decompress, 'sql', 'output.txt');
 
+Us.INSTALL = 0;
+Us.UPDATE = 1;
+Us.DELETE = 2;
 
 Us.prototype.newStep = function (flowStep) {
     var step = this.steps[flowStep.name];
@@ -96,7 +103,7 @@ Us.prototype.findStep = function (name) {
 };
 
 Us.prototype.start = function () {
-    Project.resumeWatching();
+    Project.init();
     events.EventEmitter.apply(this);
     var that = this,
         service = function (interval) {
@@ -142,20 +149,80 @@ Us.prototype.status = function () {
     return this.isRunning;
 };
 
-Us.prototype.finish = function () {
+Us.prototype.finish = function (flow) {
+    var theReal = flow,
+        pj;
     this.isRunning = false;
-    setTimeout(function (){
+    if (theReal !== undefined) {
+        if (theReal.operation === Us.UPDATE && flow.newFlow !== undefined) {
+            theReal = flow.newFlow;
+        }
+        try {
+            if (theReal.project.workspace.rootDir) {
+                var verFile = path.join(theReal.project.workspace.rootDir, Project.versionInfoFile);
+                fs.copySync(Us.versionInfoFileSrc, verFile);
+                pj = Project.findById(theReal.project.id);
+                //update version
+                pj.version = JSON.parse(fs.readFileSync(verFile));
+            }
+        } catch (err) {
+            logger.error(`Can not read version info: ${err.stack}`);
+        }
+        this.recordHistory(flow, true);
+    }
+    setTimeout(function () {
         Project.resumeWatching();
     }, 2000);
     this.wss.broadcast('~!@#$over');
 };
 
-Us.prototype.failed = function () {
+Us.prototype.failed = function (flow) {
     this.isRunning = false;
+    this.recordHistory(flow, false);
     setTimeout(function () {
         Project.resumeWatching();
-    }, 2000);    
+    }, 2000);
     this.wss.broadcast('~!@#$error');
+};
+
+Us.prototype.recordHistory = function (flow, result) {
+    /**update version info; except **/
+    try {
+        var now,
+            record,
+            theReal = flow;
+        now = new Date();
+        if (flow) {
+            if (flow.operation === Us.UPDATE && flow.newFlow !== undefined) {
+                theReal = flow.newFlow;
+                flow.error = flow.newFlow.error + flow.oldFlow.error;
+            }
+            if (theReal.project !== undefined) {
+                if (theReal.project.version === undefined) {
+                    theReal.project.version = {};
+                }
+                record = {
+                    projectid: theReal.project.id,
+                    name: theReal.project.name,
+                    revision: theReal.project.version.revision,
+                    when: moment(now).format('YYYY-MM-DD HH:mm:ss'),
+                    result: result ? 1 : 0,
+                    buildtime: theReal.project.version.datetime,
+                    reason: result ? '' : flow.error.toString(),
+                    operation: theReal.operation
+                };
+                db.orm.ProjectHistory.create(record).then(function () {
+                    logger.info("Record a history:", record);
+                }).catch(function (err) {
+                    logger.info("Fail to record a history:", record, err);
+                });
+            } else {
+                logger.error('Can not record history, invalid flow');
+            }
+        }
+    } catch (err) {
+        logger.error(`Can not record history: ${err.stack}`);
+    }
 };
 
 Us.prototype.check = function () {
@@ -177,22 +244,25 @@ Us.prototype.install = function (pkg) {
             .then(function () {
                 return that.loadInstallScript(projWrokspace);
             }).then(function (flow) {
+            flow.operation = Us.INSTALL;
             return that.flow.install(flow)
                 .then(function (flow) {
                     return that.newProject(flow);
                 })
                 .then(function (flow) {
-                    that.finish();
+                    that.finish(flow);
                 })
                 .catch(function (flow) {
-                    that.failed();
+                    that.failed(flow);
                     return that.flow.uninstall(flow);
                 });
-        }).catch(function (err) {
-            that.failed();
+        }).catch(function (flow) {
+            //can not record a history
+            that.failed(flow);
             //logger.error(err);
         });
     } catch (e) {
+        //can not record a history
         that.failed();
         throw new Error(ustring.sprintf('This project does not exist or can not be updated. e: %s', e.stack));
     }
@@ -228,13 +298,14 @@ Us.prototype.loadInstallScript = function (projWrokspace) {
         delete require.cache[require.resolve(Us.deployFlowTarget)];
         InstallFlow = require(Us.deployFlowTarget).Flow;
         //不能随意增加 ID.js
-        tempProj = Project.makeProject(require(Us.deployFlowTarget).project, Project.getId());
+        tempProj = Project.makeProject(require(Us.deployFlowTarget).project, Project.getId(), Us.decompress);
         proj = merge(tempProj, projWrokspace); // merge, dynamic first.
         if (proj.sqlCmd) {
             proj.sqlCmd.inputFiles = Us.sqlDir;
             proj.sqlCmd.outputFile = Us.sqlOutput;
         }
         that.flow = new InstallFlow(proj, that);
+        that.checkConfig(that.flow);
         flowStep.status = StepStatus.Success;
         that.updateStep(flowStep, new StepLog(
             ustring.sprintf('Project info:  %s, id:%s', proj.name, proj.id), 1, 'info'));
@@ -263,6 +334,7 @@ Us.prototype.update = function (pjid, pkg) {
                 oldProj = merge(oldProj, projWorkspace);
                 return that.loadUpdateScript(oldProj, projWorkspace);
             }).then(function (flow) {
+                flow.operation = flow.newFlow.operation = flow.oldFlow.operation = Us.UPDATE;
                 that.flow.oldFlow.project.workspace.keepOldBackup = that.flow.newFlow.project.workspace.keepOldBackup;
                 return that.flow.newFlow.update(flow)
                     .then(function () {
@@ -301,18 +373,19 @@ Us.prototype.update = function (pjid, pkg) {
                         });
                     }).then(function (isOK) {
                         if (isOK) {
-                            that.finish();
+                            that.finish(flow);
                         } else {
-                            that.failed();
+                            that.failed(flow);
                         }
                     });
             }
-        ).catch(function (err) {
-            that.failed();
+        ).catch(function (flow) {
+            that.failed(flow);
             return Q();
             //logger.error(err);
         });
     } catch (e) {
+        //can not record a history
         that.failed();
         throw new Error(ustring.sprintf('This project does not exist or can not be updated. e: %s', e.stack));
     }
@@ -320,17 +393,24 @@ Us.prototype.update = function (pjid, pkg) {
 
 Us.prototype.updateProject = function (flow) {
     var flowStep,
-        deferred = Q.defer();
+        deferred = Q.defer(),
+        that = this;
     flowStep = new FlowStep('Update installed project.');
     this.newStep(flowStep);
     this.updateStep(flowStep, new StepLog('Begin...', 1, 'info'));
     //Overwrite(delete new) new ProjectInfo.
     Project.deleteById(flow.project.id);
     Project.addProject(flow.project);
-    fs.copySync(Us.deployFlowSrc, path.join(Project.projectDir, flow.project.id + '.js'));
-    flowStep.status = StepStatus.Success;
-    this.updateStep(flowStep, new StepLog('End...', 1, 'info'));
-    deferred.resolve(flow);
+
+    Project.loadHistoryInfo([flow.project]).then(function () {
+        fs.copySync(Us.deployFlowSrc, path.join(Project.projectDir, flow.project.id + '.js'));
+        flowStep.status = StepStatus.Success;
+        that.updateStep(flowStep, new StepLog('End...', 1, 'info'));
+        deferred.resolve(flow);
+    }, function (err) {
+        deferred.resolve(flow);
+        logger.error('Failed to refresh history info.', err);
+    });
     return deferred.promise;
 };
 
@@ -349,7 +429,7 @@ Us.prototype.loadUpdateScript = function (oldProj, projWorkspace) {
         fs.copySync(Us.deployFlowSrc, Us.deployFlowTarget);
         delete require.cache[require.resolve(Us.deployFlowTarget)];
         delete require.cache[require.resolve(path.join(Project.projectDir, oldProj.id + '.js'))];
-        tempProj = Project.makeProject(require(Us.deployFlowTarget).project, oldProj.id);
+        tempProj = Project.makeProject(require(Us.deployFlowTarget).project, oldProj.id, Us.decompress);
         proj = merge(tempProj, projWorkspace); // merge, new info first.
         NewFlow = require(Us.deployFlowTarget).Flow;
         OldFlow = require(path.join(Project.projectDir, oldProj.id + '.js')).Flow;
@@ -358,8 +438,10 @@ Us.prototype.loadUpdateScript = function (oldProj, projWorkspace) {
             proj.sqlCmd.outputFile = Us.sqlOutput;
         }
         that.flow = {newFlow: new NewFlow(proj, that), oldFlow: new OldFlow(oldProj, that)};
+        that.checkConfig(that.flow.newFlow);
+        that.checkConfig(that.flow.oldFlow);
         that.updateStep(flowStep, new StepLog(
-            ustring.sprintf('Project info:  %s, id:%s', that.flow.oldFlow.project.name, that.flow.oldFlow.project.id), 1, 'info'));
+            ustring.sprintf('Project info: %s, id:%s', that.flow.oldFlow.project.name, that.flow.oldFlow.project.id), 1, 'info'));
         flowStep.status = StepStatus.Success;
         that.updateStep(flowStep, new StepLog('End...', 1, 'info'));
         deferred.resolve(that.flow);
@@ -369,6 +451,19 @@ Us.prototype.loadUpdateScript = function (oldProj, projWorkspace) {
         deferred.reject(e);
     }
     return deferred.promise;
+};
+
+Us.prototype.checkConfig = function (flow) {
+    if (flow && flow.project && flow.project.workspace && flow.project.workspace.rootDir) {
+        if (flow.project.workspace.processDir != undefined) {
+            flow.project.workspace.processDir = path.join(flow.project.workspace.rootDir, flow.project.workspace.processDir);
+        }
+        if (flow.project.workspace.webDir != undefined) {
+            flow.project.workspace.webDir = path.join(flow.project.workspace.rootDir, flow.project.workspace.webDir);
+        }
+        //clear
+        flow.error = '';
+    }
 };
 
 Us.prototype.begin = function (projWorkspace) {
@@ -418,8 +513,10 @@ Us.prototype.stop = function () {
 Us.prototype.selfUpdate = function (pkg) {
     var reader = fs.createReadStream(pkg),
         flowStep,
+        now,
         that;
     this.check();
+    now = new Date();
     that = this;
     this.clearSteps();
     flowStep = new FlowStep('Self Update.');
@@ -429,20 +526,94 @@ Us.prototype.selfUpdate = function (pkg) {
     reader.on('end', function () {
         setTimeout(function () {
             exec("npm install", {cwd: Us.ROOT}, function (errIn, stdOut, stdErr) {
-                var err = errIn || stdErr.trim();
+                var err = errIn || stdErr.trim(),
+                    result = 1, // success
+                    version = {revision: '', datetime: ''};
                 if (/npm ERR!/g.test(err)) {
                     that.updateStep(flowStep, new StepLog(ustring.sprintf('Failed: %s', err), 1, 'error'));
+                    result = 0;
                 } else {
                     that.updateStep(flowStep, new StepLog(ustring.sprintf('Success: %s', stdOut), 1, 'info'));
                 }
                 that.updateStep(flowStep, new StepLog('End...', 1, 'info'));
-                that.finish();
-                setTimeout(function () {
-                    process.exit(0);
-                }, 5000);
+                /**record operation.**/
+                var exit = function () {
+                    if (result === 1) { //exit and restart by pm2 when success.
+                        setTimeout(function () {
+                            process.exit(0);
+                        }, 5000);
+                    }
+                };
+                try {
+                    var verFile = path.join(__dirname, '../env', 'version.json');
+                    version = JSON.parse(fs.readFileSync(verFile));
+                } catch (err) {
+                    logger.error(`Can not get version info ${err.stack}`);
+                }
+                try {
+                    db.orm.SelfUpdateHistory.create({
+                        revision: version.revision,
+                        when: moment(now).format('YYYY-MM-DD HH:mm:ss'),
+                        result: result,
+                        buildtime: version.datetime,
+                        reason: result == 1 ? '' : err,
+                        operation: Us.UPDATE
+                    }).then(function () {
+                        that.finish();
+                        exit();
+                    });
+                } catch (err) {
+                    logger.error(`Can not record self update. ${err.stack}`);
+                    that.finish();
+                    exit();
+                }
             });
         }, 5000);
     });
+};
+
+Us.prototype.deleteById = function (pjid) {
+    var defer = Q.defer();
+    var proj = Project.findById(pjid);
+    if (!proj) {
+        defer.reject();
+    } else {
+        var now = Date.now();
+        var record = {
+            projectid: pjid,
+            name: proj.name,
+            revision: proj.version.revision,
+            when: moment(now).format('YYYY-MM-DD HH:mm:ss'),
+            result: 1,
+            buildtime: proj.version.datetime,
+            operation: Us.DELETE
+        };
+        //Project.pauseWatching();
+        Project.stop(pjid, true).then(function () {
+            if (Project.deleteById(pjid)) {
+                db.orm.ProjectHistory.create(record).then(function () {
+                    logger.info("Record a delete history:", record);
+                }).catch(function (err) {
+                    logger.error("Fail to record a delete history:", record, err);
+                });
+                //Project.resumeWatching();
+                defer.resolve();
+            } else {
+                record.result = 0;
+                db.orm.ProjectHistory.create(record).then(function () {
+                    logger.info("Record a delete history:", record);
+                }).catch(function (err) {
+                    logger.error("Fail to record a delete history:", record, err);
+                });
+                //Project.resumeWatching();
+                defer.reject();
+            }
+        }, function () {
+            //Project.resumeWatching();
+            defer.reject();
+        });
+    }
+    return defer.promise;
 };
 
 module.exports = new Us(new WebSocketServer({port: wsconfig.update}));

@@ -4,6 +4,8 @@
 /*jslint node:true */
 'use strict';
 
+var path = require('path');
+
 var config = {
     auth: {
         enable: true
@@ -11,6 +13,7 @@ var config = {
     ws: {
         process: 8100,
         processInterval: 1000,
+        refreshHistoryInterval: 1000 * 60 * 5, // per five min
         system: 8300,
         systemInterval: 1000,
         tail: 8200,
@@ -19,7 +22,13 @@ var config = {
     },
     debug: true,
     project: {
-        watch: false
+        watch: true
+    },
+    database: {
+        url: "sqlite://sqlite:sqlite@localhost:5432/sqlite",
+        opts: {
+            storage: path.join(__dirname, 'axnurse.db')
+        }
     }
 };
 

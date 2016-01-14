@@ -15,6 +15,10 @@ router.post('/toggle', function (req, res) {
             var pjid = req.body.pjid;
             var pid = req.body.id;
             var cmd = Number(req.body.cmd);
+            var us = req.app.get('fs.update.service');
+            if (us.isRunning) {
+                res.end({res: false, msg: 'A deploy or update job is running.'});
+            }
 
             var pr = Project.findProcessById(pjid, pid);
             if (pr == null) {

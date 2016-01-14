@@ -19,7 +19,11 @@ ApiCaller.API = {
     "UPGRADE_LOG" : "ws://" + host + ":8400",
     "PROJECT_REMOVE" : "project/delete",
     "PROJECT_WATCH_STATE" : "project/watch/state",
-    "PROJECT_WATCH_SWITCH" : "project/watch/switch"
+    "PROJECT_WATCH_SWITCH" : "project/watch/switch",
+    "PROJECT_START_ALL": "project/startall",
+    "PROJECT_START": "project/start",
+    "PROJECT_STOP_ALL": "project/stopall",
+    "PROJECT_STOP": "project/stop"
 };
 
 ApiCaller.get = function (url) {

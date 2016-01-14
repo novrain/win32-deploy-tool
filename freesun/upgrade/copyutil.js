@@ -56,6 +56,7 @@ var backup = function (flow, targetArray, desc) {
             stepLog = new StepLog(ustring.sprintf('Fail, reason: %s', err), 2, 'error');
             flowStep.status = StepStatus.Failed;
             flow.service.updateStep(flowStep, stepLog);
+            flow.error = err;
             deferred.reject(flow);
         });
     } else {
@@ -94,6 +95,7 @@ var deploy = function (flow, targetArray, targetDir, desc) {
     }).catch(function (err) {
         step.status = StepStatus.Failed;
         flow.service.updateStep(step, new StepLog('Fail. reason:' + err, 1, 'error'));
+        flow.error = err;
         deferred.reject(flow);
     });
 
@@ -145,6 +147,7 @@ var setup = function (flow, targetArray, targetDir, desc) {
     }).catch(function (err) {
         step.status = StepStatus.Failed;
         flow.service.updateStep(step, new StepLog('Fail. reason:' + err, 1, 'error'));
+        flow.error = err;
         deferred.reject(flow);
     });
 
@@ -200,6 +203,7 @@ var migrate = function (flow, targetArray, targetDir, desc) {
     }).catch(function (err) {
         step.status = StepStatus.Failed;
         flow.service.updateStep(step, new StepLog('Fail. reason:' + err, 1, 'error'));
+        flow.error = err;
         deferred.reject(flow);
     });
 
@@ -247,6 +251,7 @@ var restore = function (flow, targetArray, desc) {
             stepLog = new StepLog(ustring.sprintf('Fail, reason: %s', err), 2, 'error');
             flowStep.status = StepStatus.Failed;
             flow.service.updateStep(flowStep, stepLog);
+            flow.error = err;
             deferred.reject(flow);
         });
     } else {

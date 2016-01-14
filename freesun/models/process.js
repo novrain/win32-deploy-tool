@@ -10,6 +10,7 @@ var Q = require('q');
 var exec = require('child_process').exec;
 var moment = require('moment');
 var ustring = require('underscore.string');
+var merge = require('lodash').merge;
 
 var wmic = require('../tools/wmic');
 var psget = wmic.path.get;
@@ -17,30 +18,35 @@ var psdetailget = wmic.path.get;
 
 var logger = require('../env/logger');
 
+function ProcessInfo(info) {
+    this.spid = info.spid;
+    this.pid = info.pid;
+    this.status = info.status === undefined ? 0 : info.status;
+    this.memory = info.memory === undefined ? 0 : info.memory;
+    this.mempec = info.mempec === undefined ? 0 : info.mempec;
+    this.uptime = info.uptime === undefined ? 0 : info.uptime;
+    this.cpupec = info.cpupec === undefined ? 0 : info.cpupec;
+    this.lastStatus = info.lastStatus === undefined ? -1 : info.lastStatus;
+    this.startTime = info.startTime === undefined ? 0 : info.startTime;
+    this.stopTime = info.stopTime === undefined ? 0 : info.stopTime;
+    this.totalUpTime = info.totalUpTime === undefined ? 0 : info.totalUpTime;
+    this.got = info.got === undefined ? false : info.got;
+    this.startTimeChanged = info.startTimeChanged === undefined ? false : info.startTimeChanged;
+}
+
 function Process(process) {
     this.id = process.id;
     this.name = process.name;
     this.image = process.image;
     this.path = process.path;
-    this.watch = process.watch;
+    this.isWatching = process.watch !== undefined ? process.watch : true;
     this.logfile = process.logfile;
     this.project = process.project;
     //this.absPath = project.workspace.processDir + path + image
     this.absPath = process.absPath;
     //this.absDir = project.workspace.processDir + path
     this.absDir = process.absDir;
-    //this.r = [];
-}
-
-function ProcessInfo(info) {
-    this.spid = info.spid;
-    this.pid = info.pid;
-    this.status = info.status;
-    this.restart = info.restart;
-    this.memory = info.memory;
-    this.mempec = info.mempec;
-    this.uptime = info.uptime;
-    this.cpupec = info.cpupec;
+    this.stats = new ProcessInfo({});
 }
 
 Process.prototype.runtimeInfo = function () {
@@ -52,13 +58,13 @@ Process.prototype.toggle = function (cmd, refresh) {
         promise,
         info,
         that = this;
-    if (refresh || !this.r) {
+    if (refresh) {
         promise = this.runtimeInfo();
     } else {
         promise = Q();
     }
     promise.then(function () {
-        info = that.r[0];
+        info = that.stats;
         if (cmd === 1) {
             if (info.status !== 0) {
                 deferred.resolve(ustring.sprintf('Process %s is running.', that.name));
@@ -98,14 +104,14 @@ Process.prototype.toggle = function (cmd, refresh) {
 
 Process.getRuntimeInfo = function (allProcesses) {
     var count,
-        infos = [],
+        stats,
         now,
         i,
         proc,
         pid,
         mem,
         rawDate,
-        startDate,
+        startTime,
         procDetail,
         processes,
         procDetails,
@@ -117,7 +123,20 @@ Process.getRuntimeInfo = function (allProcesses) {
         processWhere = 'where "( ';
         for (i = 0; i < count; i = i + 1) {
             var currentProcess = allProcesses[i];
-            currentProcess.r = [{status: 0}];
+            currentProcess.stats = new ProcessInfo({
+                //reset
+                status: 0,
+                got: false,
+                //keep
+                lastStatus: currentProcess.stats.lastStatus,
+                startTime: currentProcess.stats.startTime,
+                totalUpTime: currentProcess.stats.totalUpTime,
+                //stopTime = now // 两种情况，手工停止的，精确些；异常停止的误差５秒
+                //stopTime: currentProcess.stats.stopTime === 0 ? Date.now() : currentProcess.stats.stopTime
+                stopTime: Date.now()
+            });
+            //去掉SSS
+            currentProcess.stats.stopTime = Math.floor(currentProcess.stats.stopTime / 1000) * 1000;
             processWhere += ' (name' + '=' + " '" + currentProcess.image + "'" + " AND " + 'ExecutablePath' + '=' + " '" + currentProcess.absPath.replace(/\\/g, '\\\\') + "') ";
             processWhere += i < count - 1 ? ' OR ' : '';
         }
@@ -149,34 +168,42 @@ Process.getRuntimeInfo = function (allProcesses) {
                     procDetails = psdetailInfo;
                     now = Date.now();
                     for (i = 0; i < count; i = i + 1) {
-                        infos = [];
                         proc = processes[i];
                         //proc.ExecutablePath = (new Iconv('GB2312', 'UTF-8')).convert(proc.ExecutablePath).toString();
                         pid = proc.ProcessId;
                         mem = proc.WorkingSetSize;
                         rawDate = proc.CreationDate; //20150810140302.571036+480
-                        startDate = moment(rawDate.substring(0, rawDate.indexOf('.')), "YYYYMMDDHHmmss").toDate();
+                        startTime = moment(rawDate.substring(0, rawDate.indexOf('.')), "YYYYMMDDHHmmss").toDate() - 0;
                         procDetail = procDetails.filter(function (v, i, arr) {
                             return v.IDProcess === pid;
                         })[0];
                         if (procDetail) {
-                            infos.push(new ProcessInfo(
-                                {
-                                    pid: pid,
-                                    status: 1,
-                                    //restart: safeutf8(proc, 'ProcessId'),
-                                    memory: Number(mem / 1024).toFixed(2),
-                                    mempec: Number(100 * (mem / os.totalmem())).toFixed(2),
-                                    uptime: now - startDate,
-                                    cpupec: procDetail.PercentProcessorTime
-                                }
-                            ));
+                            stats = {
+                                pid: pid,
+                                status: 1,
+                                //restart: safeutf8(proc, 'ProcessId'),
+                                memory: Number(mem / 1024).toFixed(2),
+                                mempec: Number(100 * (mem / os.totalmem())).toFixed(2),
+                                //去掉SSS
+                                uptime: Math.floor(now / 1000) * 1000 - startTime,
+                                cpupec: procDetail.PercentProcessorTime
+                            };
+                            //规避同一个路径下同一个进程启动多次的情况，这种情况下，无法与实际的进程匹配，处理上按照先后来，即 procDetail 找到一个 处理一个 标记一个
                             var matchRows = allProcesses.filter(function (v, i, arr) {
-                                return v.image === proc.Name && v.absPath.toUpperCase() === proc.ExecutablePath.toUpperCase();
+                                return v.image === proc.Name && v.absPath.toUpperCase() === proc.ExecutablePath.toUpperCase() && !v.stats.got;
                             });
                             if (matchRows) {
-                                matchRows.forEach(function (v) {
-                                    v.r = infos;
+                                matchRows.some(function (v) {
+                                    v.stats = merge(v.stats, stats);
+                                    v.stats.got = true;
+                                    v.stats.startTimeChanged = v.stats.startTime !== startTime;
+                                    if (!v.stats.startTimeChanged) {
+                                        v.stats.stopTime = 0; //
+                                    } else {
+                                        v.stats.stopTime = startTime - 1000; //认为刚停,空一秒,意思意思
+                                    }
+                                    v.stats.startTime = startTime; //
+                                    return true;
                                 });
                             } else {
                                 logger.error("Fail to get process error, reason: %s", proc.ExecutablePath);
@@ -197,7 +224,7 @@ Process.getRuntimeInfo = function (allProcesses) {
 };
 
 Process.prototype.isRunning = function () {
-    return this.r && this.r[0] && this.r[0].status === 1;
+    return this.stats && this.stats.status === 1;
 };
 
 module.exports = Process;

@@ -1,6 +1,7 @@
 style-loader
 css-loader
 jsx-loader
+json-loader
 react
 react-router
 react-dropzone@1.2.4

@@ -47,6 +47,7 @@ var backup = function (flow) {
             stepLog = new StepLog('Fail. reason:' + err, 1, 'error');
             flowStep.status = StepStatus.Failed;
             flow.service.updateStep(flowStep, stepLog);
+            flow.error = err;
             deferred.reject(flow);
         }
     );
@@ -84,6 +85,7 @@ var restore = function (flow, check) {
                 stepLog = new StepLog('Fail. reason:' + err, 1, 'error');
                 flowStep.status = StepStatus.Failed;
                 flow.service.updateStep(flowStep, stepLog);
+                flow.error = err;
                 deferred.reject(flow);
             }
         );
@@ -137,6 +139,15 @@ function getMinVersion(versions) {
     return min;
 }
 
+function compareFile(a, b) {
+    var na = Number(a.split('_')[0]),
+        nb = Number(b.split('_')[0]);
+
+    if (na > nb) return 1;
+    if (na < nb) return -1;
+    if (na == nb) return 0;
+}
+
 var executeSqls = function (flow) {
     var sqlCmd = flow.project.sqlCmd,
         deferred = Q.defer(),
@@ -157,16 +168,18 @@ var executeSqls = function (flow) {
             var minVersion = getMinVersion(versions);
             sqlSchemaFiles = fs.readdirSync(path.join(sqlCmd.inputFiles, minVersion, SCHEMA));
             sqlDataFiles = fs.readdirSync(path.join(sqlCmd.inputFiles, minVersion, DATA));
-            sqlFiles = sqlFiles.concat(!sqlSchemaFiles ? [] : sqlSchemaFiles.filter(function (file) {
-                return path.extname(file) === '.sql';
-            }).map(function (file) {
-                return path.join(sqlCmd.inputFiles, minVersion, SCHEMA, file);
-            }));
-            sqlFiles = sqlFiles.concat(!sqlDataFiles ? [] : sqlDataFiles.filter(function (file) {
-                return path.extname(file) === '.sql';
-            }).map(function (file) {
-                return path.join(sqlCmd.inputFiles, minVersion, DATA, file);
-            }));
+            sqlFiles = sqlFiles.concat(!sqlSchemaFiles ? [] : sqlSchemaFiles.sort(compareFile)
+                .filter(function (file) {
+                    return path.extname(file) === '.sql';
+                }).map(function (file) {
+                    return path.join(sqlCmd.inputFiles, minVersion, SCHEMA, file);
+                }));
+            sqlFiles = sqlFiles.concat(!sqlDataFiles ? [] : sqlDataFiles.sort(compareFile)
+                .filter(function (file) {
+                    return path.extname(file) === '.sql';
+                }).map(function (file) {
+                    return path.join(sqlCmd.inputFiles, minVersion, DATA, file);
+                }));
 
             versions.splice(versions.indexOf(minVersion), 1);
         }
@@ -197,6 +210,7 @@ var executeSqls = function (flow) {
                 stepLog = new StepLog('Fail. reason:' + err, 1, 'error');
                 flowStep.status = StepStatus.Failed;
                 flow.service.updateStep(flowStep, stepLog);
+                flow.error = err;
                 deferred.reject(flow);
             }
         );

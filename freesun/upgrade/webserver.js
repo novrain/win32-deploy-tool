@@ -13,6 +13,7 @@ var iis = require('../tools/iis');
 var FlowStep = require('./flowStep').FlowStep;
 var StepLog = require('./flowStep').StepLog;
 var StepStatus = require('./flowStep').StepStatus;
+var Project = require('../models/project');
 
 
 function WebUpdate() {
@@ -31,6 +32,13 @@ var templateFunc = function (iisOp, flow, desc) {
     flow.service.updateStep(flowStep, new StepLog('Begin...', 1, 'info'));
     proj.webserver.reduce(function (prev, next, i) {
         return prev.then(function () {
+            if (desc === 'Start web server') {//trick
+                if (!Project.lastState || !next.project.isWatching || !next.isWatching) {
+                    stepLog = new StepLog(ustring.sprintf('One of global/project/web server watching switch is off, skip: %s', next.name), 2, 'warn');
+                    flow.service.updateStep(flowStep, stepLog);
+                    return Q();
+                }
+            }
             stepLog = new StepLog(ustring.sprintf('%s: %s', desc, JSON.stringify(next)), 2, 'info');
             flow.service.updateStep(flowStep, stepLog);
             var func = Q.nbind(iisOp, iis);
@@ -44,6 +52,7 @@ var templateFunc = function (iisOp, flow, desc) {
         stepLog = new StepLog(ustring.sprintf('Fail, reason: %s', err), 1, 'error');
         flowStep.status = StepStatus.Failed;
         flow.service.updateStep(flowStep, stepLog);
+        flow.error = err;
         deferred.reject(flow);
     });
     return deferred.promise;
